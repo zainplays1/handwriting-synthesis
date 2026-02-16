@@ -8,6 +8,12 @@ try:
 except ImportError:
     import importlib_metadata
 
+import numpy as np
+import svgwrite
+
+import drawing
+from demo import Hand
+
 
 DEFAULT_LAYOUT = {
     'char_width': 18.0,
@@ -59,6 +65,10 @@ class LatexParser(object):
                 while j < len(expression) and expression[j].isalpha():
                     j += 1
                 command = expression[cmd_start:j]
+                j = i + 1
+                while j < len(expression) and expression[j].isalpha():
+                    j += 1
+                command = expression[i + 1:j]
                 if not command:
                     raise ValueError('Invalid LaTeX command near position {}'.format(i))
                 tokens.append(('CMD', command))
@@ -305,6 +315,7 @@ class ChunkSynthesizer(object):
             from demo import Hand
             hand = Hand()
         self.hand = hand
+        self.hand = hand or Hand()
         self.bias = bias
         self.style = style
         self.cache = {}
@@ -573,3 +584,6 @@ def _cli():
 
 if __name__ == '__main__':
     _cli()
+if __name__ == '__main__':
+    writer = MathHandWriter(seed=7)
+    writer.write_svg('x^{2}+\\frac{1}{y}', 'img/math_demo.svg')
