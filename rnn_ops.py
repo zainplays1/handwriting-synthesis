@@ -6,11 +6,54 @@ from tensorflow.python.ops import control_flow_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import tensor_array_ops
 from tensorflow.python.ops import variable_scope as vs
-from tensorflow.python.ops.rnn_cell_impl import _concat, _like_rnncell
-from tensorflow.python.ops.rnn import _maybe_tensor_shape_from_tensor
 from tensorflow.python.util import nest
 from tensorflow.python.framework import tensor_shape
+
+
+def _like_rnncell(cell):
+    return (
+        hasattr(cell, 'output_size') and
+        hasattr(cell, 'state_size') and
+        callable(cell)
+    )
+
+
+def _maybe_tensor_shape_from_tensor(shape_like):
+    if isinstance(shape_like, ops.Tensor):
+        # Preserve dynamic shape behavior expected by TensorArray element_shape.
+        return tensor_shape.TensorShape(None)
+    return tensor_shape.as_shape(shape_like)
+
+
+def _as_shape_tensor(value):
+    if isinstance(value, ops.Tensor):
+        return value if value.shape.ndims != 0 else array_ops.expand_dims(value, 0)
+
+    shape_value = tensor_shape.as_shape(value).as_list()
+    if any(dim is None for dim in shape_value):
+        raise ValueError('Shape must be fully defined: {}'.format(value))
+    return constant_op.constant(shape_value, dtype=dtypes.int32)
+
+
+def _concat(prefix, suffix):
+    prefix_t = _as_shape_tensor(prefix)
+    suffix_t = _as_shape_tensor(suffix)
+    return array_ops.concat([prefix_t, suffix_t], axis=0)
 from tensorflow.python.eager import context
+
+
+def _is_graph_mode():
+    """TensorFlow 1.x/2.x compatible graph-mode check."""
+    in_graph_mode = getattr(context, "in_graph_mode", None)
+    if callable(in_graph_mode):
+        return in_graph_mode()
+
+    executing_eagerly = getattr(context, "executing_eagerly", None)
+    if callable(executing_eagerly):
+        return not executing_eagerly()
+
+    # TF1 default behavior when eager utilities are unavailable.
+    return True
 
 
 def raw_rnn(cell, loop_fn, parallel_iterations=None, swap_memory=False, scope=None):
@@ -37,7 +80,7 @@ def raw_rnn(cell, loop_fn, parallel_iterations=None, swap_memory=False, scope=No
     # determined by the parent scope, or is set to place the cached
     # Variable using the same placement as for the rest of the RNN.
     with vs.variable_scope(scope or "rnn") as varscope:
-        if context.in_graph_mode():
+        if _is_graph_mode():
             if varscope.caching_device is None:
                 varscope.set_caching_device(lambda op: op.device)
 
