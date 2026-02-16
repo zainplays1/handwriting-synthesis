@@ -6,10 +6,39 @@ from tensorflow.python.ops import control_flow_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import tensor_array_ops
 from tensorflow.python.ops import variable_scope as vs
-from tensorflow.python.ops.rnn_cell_impl import _concat, _like_rnncell
-from tensorflow.python.ops.rnn import _maybe_tensor_shape_from_tensor
 from tensorflow.python.util import nest
 from tensorflow.python.framework import tensor_shape
+
+
+def _like_rnncell(cell):
+    return (
+        hasattr(cell, 'output_size') and
+        hasattr(cell, 'state_size') and
+        callable(cell)
+    )
+
+
+def _maybe_tensor_shape_from_tensor(shape_like):
+    if isinstance(shape_like, ops.Tensor):
+        # Preserve dynamic shape behavior expected by TensorArray element_shape.
+        return tensor_shape.TensorShape(None)
+    return tensor_shape.as_shape(shape_like)
+
+
+def _as_shape_tensor(value):
+    if isinstance(value, ops.Tensor):
+        return value if value.shape.ndims != 0 else array_ops.expand_dims(value, 0)
+
+    shape_value = tensor_shape.as_shape(value).as_list()
+    if any(dim is None for dim in shape_value):
+        raise ValueError('Shape must be fully defined: {}'.format(value))
+    return constant_op.constant(shape_value, dtype=dtypes.int32)
+
+
+def _concat(prefix, suffix):
+    prefix_t = _as_shape_tensor(prefix)
+    suffix_t = _as_shape_tensor(suffix)
+    return array_ops.concat([prefix_t, suffix_t], axis=0)
 from tensorflow.python.eager import context
 
 
