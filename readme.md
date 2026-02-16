@@ -59,3 +59,35 @@ This project was intended to serve as a reference implementation for a research 
 
   - Package this, and otherwise make it look more like a usable software project and less like research code.
   - Add support for more sophisticated drawing, animations, or anything else in this direction.  Currently, the project only creates some simple svg files.
+
+## Experimental Math/LaTeX Layout Engine
+A new optional wrapper (`math_layout.py`) adds 2D equation support without changing the core RNN model.
+
+### Architecture
+1. **Input parser (Phase 1):** `LatexParser` converts a subset of LaTeX (`^`, `_`, `\frac{...}{...}` and flat symbols) into a tree.
+2. **Modular generation (Phase 2):** `ChunkSynthesizer` calls the existing `Hand._sample` model per symbol/chunk, keeping the LSTM+MDN untouched.
+3. **Canvas stitcher (Phase 3):** `CanvasStitcher` scales/shifts chunk coordinates for superscripts, fractions, and subscripts, then injects small jitter so layout remains natural.
+
+### Example
+```python
+from math_layout import MathHandWriter
+
+writer = MathHandWriter(seed=7)
+writer.write_svg(r"x^{2}+\\frac{1}{y}", "img/math_demo.svg")
+```
+
+The resulting file contains model-generated handwriting chunks stitched into a structured 2D equation.
+
+
+### Getting visible output during testing
+If you only want to verify parsing/layout and see terminal output (no TensorFlow/model run), use:
+```bash
+python math_layout.py 'x^{2}+\\frac{1}{y_0}' --inspect-only
+```
+This prints the parsed AST and a layout summary to stdout.
+
+To render an SVG and also print progress:
+```bash
+python math_layout.py 'x^{2}+\\frac{1}{y_0}' --out img/math_demo.svg
+```
+This prints diagnostics first, then `Rendered SVG: ...` after writing the file.
