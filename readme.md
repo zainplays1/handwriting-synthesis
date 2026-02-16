@@ -59,3 +59,71 @@ This project was intended to serve as a reference implementation for a research 
 
   - Package this, and otherwise make it look more like a usable software project and less like research code.
   - Add support for more sophisticated drawing, animations, or anything else in this direction.  Currently, the project only creates some simple svg files.
+
+## Experimental Math/LaTeX Layout Engine
+A new optional wrapper (`math_layout.py`) adds 2D equation support without changing the core RNN model.
+
+### Architecture
+1. **Input parser (Phase 1):** `LatexParser` converts a subset of LaTeX (`^`, `_`, `\frac{...}{...}` and flat symbols) into a tree.
+2. **Modular generation (Phase 2):** `ChunkSynthesizer` calls the existing `Hand._sample` model per symbol/chunk, keeping the LSTM+MDN untouched.
+3. **Canvas stitcher (Phase 3):** `CanvasStitcher` scales/shifts chunk coordinates for superscripts, fractions, and subscripts, then injects small jitter so layout remains natural.
+
+### Example
+```python
+from math_layout import MathHandWriter
+
+writer = MathHandWriter(seed=7)
+writer.write_svg(r"x^{2}+\\frac{1}{y}", "img/math_demo.svg")
+```
+
+The resulting file contains model-generated handwriting chunks stitched into a structured 2D equation.
+
+By default, math stitching now uses zero jitter for more stable, textbook-like placement; pass a non-zero jitter to `MathHandWriter(..., jitter_scale=...)` if you want more hand-drawn variation.
+
+
+### Getting visible output during testing
+If you only want to verify parsing/layout and see terminal output (no TensorFlow/model run), use:
+```bash
+python math_layout.py 'x^{2}+\\frac{1}{y_0}' --inspect-only
+```
+This prints the parsed AST and a layout summary to stdout.
+
+To render an SVG and also print progress:
+```bash
+python math_layout.py 'x^{2}+\\frac{1}{y_0}' --out img/math_demo.svg
+```
+This prints diagnostics first, then `Rendered SVG: ...` after writing the file.
+If rendering dependencies are missing (for example `svgwrite` or `numpy`), the CLI now prints an install hint instead of a full traceback.
+It also checks TensorFlow compatibility up front and warns when the runtime/build is incompatible with this TensorFlow 1.x-based project.
+
+> Note: on PowerShell/Windows shells, both `\frac` and `\\frac` forms are accepted by the parser now.
+> PowerShell note: use `echo $LASTEXITCODE` (not `echo $?`) to see numeric process exit codes. Example: `python math_layout.py ... --out img/math_demo.svg; echo EXIT:$LASTEXITCODE`.
+
+
+### Windows quick-start (recommended)
+If rendering keeps failing, **do not use base Python 3.8+** for this repo. Use a dedicated Python 3.7 env:
+
+```powershell
+conda create -n hwsyn37 python=3.7 -y
+conda activate hwsyn37
+python -m pip install -r requirements-py37.txt
+python math_layout.py 'x^{2}+\frac{1}{y_0}' --doctor --inspect-only
+python math_layout.py 'x^{2}+\frac{1}{y_0}' --out img/math_demo.svg
+echo EXIT:$LASTEXITCODE
+```
+
+`--doctor` prints Python/dependency compatibility before rendering so setup issues are obvious.
+
+
+> TensorFlow 1.15.x is sensitive to protobuf versions. If you see a `Descriptors cannot not be created directly` error, pin protobuf to `<=3.20.3`.
+
+> If Python 3.7 reports `ModuleNotFoundError: No module named importlib_metadata`, run: `python -m pip install importlib-metadata`.
+
+
+### PowerShell note for inline Python tests
+The Bash-style heredoc (`python - <<'PY'`) does not work in PowerShell.
+Use this instead:
+
+```powershell
+python math_layout.py 'x^{2}+\\frac{1}{y_0}' --smoke-test --inspect-only
+```
