@@ -7,22 +7,13 @@ import sys
 try:
     from importlib import metadata as importlib_metadata
 except ImportError:
-    try:
-        import importlib_metadata
-    except ImportError:
-        class _ImportlibMetadataFallback(object):
-            class PackageNotFoundError(Exception):
-                pass
+    import importlib_metadata
 
-            @staticmethod
-            def version(name):
-                try:
-                    import pkg_resources
-                    return pkg_resources.get_distribution(name).version
-                except Exception:
-                    raise _ImportlibMetadataFallback.PackageNotFoundError()
+import numpy as np
+import svgwrite
 
-        importlib_metadata = _ImportlibMetadataFallback()
+import drawing
+from demo import Hand
 
 
 DEFAULT_LAYOUT = {
@@ -75,6 +66,10 @@ class LatexParser(object):
                 while j < len(expression) and expression[j].isalpha():
                     j += 1
                 command = expression[cmd_start:j]
+                j = i + 1
+                while j < len(expression) and expression[j].isalpha():
+                    j += 1
+                command = expression[i + 1:j]
                 if not command:
                     raise ValueError('Invalid LaTeX command near position {}'.format(i))
                 tokens.append(('CMD', command))
@@ -321,6 +316,7 @@ class ChunkSynthesizer(object):
             from demo import Hand
             hand = Hand()
         self.hand = hand
+        self.hand = hand or Hand()
         self.bias = bias
         self.style = style
         self.cache = {}
@@ -341,6 +337,7 @@ class ChunkSynthesizer(object):
         sample[:, :2] *= 1.5
         sample = drawing.offsets_to_coords(sample)
         sample = drawing.denoise(sample)
+        sample[:, :2] = drawing.align(sample[:, :2])
         offsets = drawing.coords_to_offsets(sample)
         self.cache[text] = np.copy(offsets)
         return offsets
@@ -349,7 +346,7 @@ class ChunkSynthesizer(object):
 class CanvasStitcher(object):
     """Compose generated chunks into one canvas with slight jitter for natural handwriting."""
 
-    def __init__(self, jitter_scale=0.0, seed=None):
+    def __init__(self, jitter_scale=0.015, seed=None):
         self.random = random.Random(seed)
         self.jitter_scale = jitter_scale
 
@@ -363,11 +360,6 @@ class CanvasStitcher(object):
                 assembled.append(self._rule_to_coords(instruction))
                 continue
 
-            symbol_coords = self._symbol_to_coords(instruction)
-            if symbol_coords is not None:
-                assembled.append(symbol_coords)
-                continue
-
             offsets = synthesizer.generate_offsets(instruction['text'])
             coords = drawing.offsets_to_coords(offsets)
 
@@ -378,8 +370,7 @@ class CanvasStitcher(object):
             scale = instruction['scale'] * self._jitter(1.0)
             coords[:, :2] *= scale
             coords[:, 0] += instruction['x']
-            y_jitter = self._jitter(0.0, amplitude=self.jitter_scale * 10.0)
-            coords[:, 1] += instruction['y'] + y_jitter
+            coords[:, 1] += instruction['y'] + self._jitter(0.0, amplitude=2.0)
             assembled.append(coords)
 
         if not assembled:
@@ -401,32 +392,6 @@ class CanvasStitcher(object):
             [instruction['x2'], instruction['y'], 1.0],
         ])
 
-    def _symbol_to_coords(self, instruction):
-        import numpy as np
-
-        text = instruction.get('text')
-        if text not in ['+', '=']:
-            return None
-
-        x = instruction['x']
-        y = instruction['y']
-        size = 12.0 * instruction['scale']
-
-        if text == '+':
-            return np.array([
-                [x, y, 0.0],
-                [x + size, y, 1.0],
-                [x + 0.5 * size, y - 0.5 * size, 0.0],
-                [x + 0.5 * size, y + 0.5 * size, 1.0],
-            ])
-
-        return np.array([
-            [x, y - 0.2 * size, 0.0],
-            [x + size, y - 0.2 * size, 1.0],
-            [x, y + 0.2 * size, 0.0],
-            [x + size, y + 0.2 * size, 1.0],
-        ])
-
     def _jitter(self, center, amplitude=None):
         amp = amplitude if amplitude is not None else self.jitter_scale
         return center + self.random.uniform(-amp, amp)
@@ -435,7 +400,7 @@ class CanvasStitcher(object):
 class MathHandWriter(object):
     """End-to-end wrapper: parse LaTeX, generate chunks, stitch and render to SVG."""
 
-    def __init__(self, hand=None, layout_config=None, jitter_scale=0.0, seed=None):
+    def __init__(self, hand=None, layout_config=None, jitter_scale=0.015, seed=None):
         self.parser_cls = LatexParser
         self.layout = MathLayoutEngine(layout_config=layout_config)
         self.synth = ChunkSynthesizer(hand=hand)
@@ -519,19 +484,6 @@ def print_doctor_report():
     except importlib_metadata.PackageNotFoundError:
         print('[INFO] tensorflow version: not installed')
 
-    try:
-        protobuf_version = importlib_metadata.version('protobuf')
-        print('[INFO] protobuf version: {}'.format(protobuf_version))
-    except importlib_metadata.PackageNotFoundError:
-        print('[INFO] protobuf version: not installed')
-
-    try:
-        requirements_text = open('requirements.txt', 'r').read()
-        if 'tensorflow==1.6.0' in requirements_text:
-            print('[WARN] requirements.txt still pins tensorflow==1.6.0; update to latest repo or use requirements-py37.txt.')
-    except Exception:
-        pass
-
     issue = _runtime_dependency_issue()
     if issue:
         print('')
@@ -539,32 +491,10 @@ def print_doctor_report():
         print(issue)
         print('')
         print('Quick fix (PowerShell):')
-        print('  python -m pip install -r requirements-py37.txt')
+        print('  python -m pip install -r requirements.txt')
     else:
         print('')
         print('Environment looks ready for rendering.')
-
-
-def run_smoke_test(expression):
-    """Run a lightweight geometry stitch test without loading TensorFlow model."""
-    try:
-        import numpy as np
-    except ImportError:
-        print('Smoke test skipped: numpy is not installed in this environment.')
-        return False
-
-    class FakeSynth(object):
-        def generate_offsets(self, text):
-            return np.array([[0.0, 0.0, 1.0], [5.0, 5.0, 1.0]], dtype=float)
-
-    ast = LatexParser(expression).parse()
-    layout = MathLayoutEngine().layout(ast)
-    coords = CanvasStitcher(jitter_scale=0.0, seed=7).stitch(layout['instructions'], FakeSynth())
-
-    print('Smoke test: PASS')
-    print('  instruction_count: {}'.format(len(layout['instructions'])))
-    print('  coords_shape: {}'.format(coords.shape))
-    return True
 
 def _runtime_dependency_issue():
     if sys.version_info[:2] >= (3, 8):
@@ -572,7 +502,7 @@ def _runtime_dependency_issue():
             "Incompatible Python version detected: {}.{}.{}\n"
             "TensorFlow 1.x wheels used by this project are not available for Python 3.8+.\n"
             "Create a Python 3.7 environment, then run:\n"
-            "  python -m pip install -r requirements-py37.txt"
+            "  python -m pip install -r requirements.txt"
         ).format(*sys.version_info[:3])
 
     required_modules = ['numpy', 'svgwrite']
@@ -581,7 +511,7 @@ def _runtime_dependency_issue():
             return (
                 "Missing dependency: {}.\n"
                 "Install project dependencies before rendering, for example:\n"
-                "  python -m pip install -r requirements-py37.txt\n"
+                "  python -m pip install -r requirements.txt\n"
                 "Or install the missing package directly (example):\n"
                 "  pip install {}"
             ).format(module_name, module_name)
@@ -593,7 +523,7 @@ def _runtime_dependency_issue():
             "Missing dependency: tensorflow.\n"
             "This project requires TensorFlow 1.x for the pretrained model.\n"
             "Install compatible dependencies with:\n"
-            "  python -m pip install -r requirements-py37.txt"
+            "  python -m pip install -r requirements.txt"
         )
 
     major = tf_version.split('.', 1)[0]
@@ -601,6 +531,7 @@ def _runtime_dependency_issue():
         return (
             "Incompatible tensorflow version detected: {}.\n"
             "This project expects TensorFlow 1.x (requirements pin 1.15.5).\n"
+            "This project expects TensorFlow 1.x (see requirements.txt uses 1.6.0).\n"
             "Please install a TensorFlow 1.x compatible environment and rerun."
         ).format(tf_version)
 
@@ -627,7 +558,7 @@ def _format_missing_dependency_error(exc):
     return (
         "Missing dependency: {}.\n"
         "Install project dependencies before rendering, for example:\n"
-        "  python -m pip install -r requirements-py37.txt\n"
+        "  python -m pip install -r requirements.txt\n"
         "Or install the missing package directly (example):\n"
         "  pip install {}"
     ).format(module_name, module_name)
@@ -639,7 +570,6 @@ def _cli():
     parser.add_argument('expression', help='Expression like x^{2}+\\frac{1}{y}')
     parser.add_argument('--inspect-only', action='store_true', help='Only print AST/layout information.')
     parser.add_argument('--doctor', action='store_true', help='Print environment diagnostics for render mode.')
-    parser.add_argument('--smoke-test', action='store_true', help='Run lightweight geometry stitch test (no TensorFlow model).')
     parser.add_argument('--out', default='img/math_demo.svg', help='Output SVG path for rendering mode.')
     args = parser.parse_args()
 
@@ -647,11 +577,7 @@ def _cli():
         print_doctor_report()
 
     inspect_expression(args.expression)
-
-    if args.smoke_test:
-        run_smoke_test(args.expression)
-
-    if not args.inspect_only and not args.smoke_test:
+    if not args.inspect_only:
         issue = _runtime_dependency_issue()
         if issue:
             print(issue)
@@ -666,19 +592,10 @@ def _cli():
             print(_format_missing_dependency_error(exc))
             print('Exiting with code 2.')
             raise SystemExit(2)
-        except Exception as exc:
-            message = str(exc)
-            if 'Descriptors cannot not be created directly' in message:
-                print(
-                    "Incompatible protobuf runtime detected at TensorFlow import time.\n"
-                    "TensorFlow 1.15.x requires protobuf <= 3.20.x.\n"
-                    "Run:\n"
-                    "  python -m pip install 'protobuf<=3.20.3'"
-                )
-                print('Exiting with code 2.')
-                raise SystemExit(2)
-            raise
 
 
 if __name__ == '__main__':
     _cli()
+if __name__ == '__main__':
+    writer = MathHandWriter(seed=7)
+    writer.write_svg('x^{2}+\\frac{1}{y}', 'img/math_demo.svg')

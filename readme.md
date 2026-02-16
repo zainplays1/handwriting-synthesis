@@ -78,8 +78,6 @@ writer.write_svg(r"x^{2}+\\frac{1}{y}", "img/math_demo.svg")
 
 The resulting file contains model-generated handwriting chunks stitched into a structured 2D equation.
 
-By default, math stitching now uses zero jitter for more stable, textbook-like placement; pass a non-zero jitter to `MathHandWriter(..., jitter_scale=...)` if you want more hand-drawn variation.
-
 
 ### Getting visible output during testing
 If you only want to verify parsing/layout and see terminal output (no TensorFlow/model run), use:
@@ -106,24 +104,14 @@ If rendering keeps failing, **do not use base Python 3.8+** for this repo. Use a
 ```powershell
 conda create -n hwsyn37 python=3.7 -y
 conda activate hwsyn37
-python -m pip install -r requirements-py37.txt
+If rendering keeps failing, run these in your active environment:
+
+```powershell
+python -m pip install -r requirements.txt
 python math_layout.py 'x^{2}+\frac{1}{y_0}' --doctor --inspect-only
 python math_layout.py 'x^{2}+\frac{1}{y_0}' --out img/math_demo.svg
 echo EXIT:$LASTEXITCODE
 ```
 
 `--doctor` prints Python/dependency compatibility before rendering so setup issues are obvious.
-
-
-> TensorFlow 1.15.x is sensitive to protobuf versions. If you see a `Descriptors cannot not be created directly` error, pin protobuf to `<=3.20.3`.
-
-> If Python 3.7 reports `ModuleNotFoundError: No module named importlib_metadata`, run: `python -m pip install importlib-metadata`.
-
-
-### PowerShell note for inline Python tests
-The Bash-style heredoc (`python - <<'PY'`) does not work in PowerShell.
-Use this instead:
-
-```powershell
-python math_layout.py 'x^{2}+\\frac{1}{y_0}' --smoke-test --inspect-only
-```
+`--doctor` prints whether `numpy`, `svgwrite`, and `tensorflow` are detectable before rendering.
