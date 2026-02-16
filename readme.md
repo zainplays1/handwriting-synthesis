@@ -77,3 +77,35 @@ writer.write_svg(r"x^{2}+\\frac{1}{y}", "img/math_demo.svg")
 ```
 
 The resulting file contains model-generated handwriting chunks stitched into a structured 2D equation.
+
+
+### Getting visible output during testing
+If you only want to verify parsing/layout and see terminal output (no TensorFlow/model run), use:
+```bash
+python math_layout.py 'x^{2}+\\frac{1}{y_0}' --inspect-only
+```
+This prints the parsed AST and a layout summary to stdout.
+
+To render an SVG and also print progress:
+```bash
+python math_layout.py 'x^{2}+\\frac{1}{y_0}' --out img/math_demo.svg
+```
+This prints diagnostics first, then `Rendered SVG: ...` after writing the file.
+If rendering dependencies are missing (for example `svgwrite` or `numpy`), the CLI now prints an install hint instead of a full traceback.
+It also checks TensorFlow compatibility up front and warns when the runtime/build is incompatible with this TensorFlow 1.x-based project.
+
+> Note: on PowerShell/Windows shells, both `\frac` and `\\frac` forms are accepted by the parser now.
+> PowerShell note: use `echo $LASTEXITCODE` (not `echo $?`) to see numeric process exit codes. Example: `python math_layout.py ... --out img/math_demo.svg; echo EXIT:$LASTEXITCODE`.
+
+
+### Windows quick-start (recommended)
+If rendering keeps failing, run these in your active environment:
+
+```powershell
+python -m pip install -r requirements.txt
+python math_layout.py 'x^{2}+\frac{1}{y_0}' --doctor --inspect-only
+python math_layout.py 'x^{2}+\frac{1}{y_0}' --out img/math_demo.svg
+echo EXIT:$LASTEXITCODE
+```
+
+`--doctor` prints whether `numpy`, `svgwrite`, and `tensorflow` are detectable before rendering.

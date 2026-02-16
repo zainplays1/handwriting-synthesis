@@ -1,4 +1,12 @@
 import random
+import argparse
+import json
+import importlib
+
+try:
+    from importlib import metadata as importlib_metadata
+except ImportError:
+    import importlib_metadata
 
 import numpy as np
 import svgwrite
@@ -48,6 +56,15 @@ class LatexParser(object):
                 i += 1
                 continue
             if char == '\\':
+                cmd_start = i + 1
+                if cmd_start < len(expression) and expression[cmd_start] == '\\':
+                    # tolerate double-backslash CLI input such as \\frac from PowerShell/cmd
+                    cmd_start += 1
+
+                j = cmd_start
+                while j < len(expression) and expression[j].isalpha():
+                    j += 1
+                command = expression[cmd_start:j]
                 j = i + 1
                 while j < len(expression) and expression[j].isalpha():
                     j += 1
@@ -294,12 +311,19 @@ class ChunkSynthesizer(object):
     """Generate stroke arrays for token-sized text chunks via the untouched Hand model."""
 
     def __init__(self, hand=None, bias=0.75, style=9):
+        if hand is None:
+            from demo import Hand
+            hand = Hand()
+        self.hand = hand
         self.hand = hand or Hand()
         self.bias = bias
         self.style = style
         self.cache = {}
 
     def generate_offsets(self, text):
+        import numpy as np
+        import drawing
+
         if text in self.cache:
             return np.copy(self.cache[text])
 
@@ -326,6 +350,9 @@ class CanvasStitcher(object):
         self.jitter_scale = jitter_scale
 
     def stitch(self, instructions, synthesizer):
+        import numpy as np
+        import drawing
+
         assembled = []
         for instruction in instructions:
             if instruction.get('type') == 'rule':
@@ -358,6 +385,7 @@ class CanvasStitcher(object):
         return np.vstack(merged)
 
     def _rule_to_coords(self, instruction):
+        import numpy as np
         return np.array([
             [instruction['x1'], instruction['y'], 0.0],
             [instruction['x2'], instruction['y'], 1.0],
@@ -388,6 +416,8 @@ class MathHandWriter(object):
         }
 
     def write_svg(self, expression, filename, stroke_color='black', stroke_width=2):
+        import svgwrite
+
         compiled = self.compile(expression)
         coords = compiled['coords']
 
@@ -418,6 +448,142 @@ class MathHandWriter(object):
         return compiled
 
 
+def inspect_expression(expression):
+    """Print parser/layout diagnostics without loading TensorFlow or running the model."""
+    ast = LatexParser(expression).parse()
+    layout = MathLayoutEngine().layout(ast)
+    print('AST:')
+    print(json.dumps(ast, indent=2, sort_keys=True))
+    print('')
+    print('Layout summary:')
+    print('  instructions: {}'.format(len(layout['instructions'])))
+    print('  bbox: {}'.format(layout['bbox']))
+
+
+
+def print_doctor_report():
+    """Print environment diagnostics for render mode."""
+    print('Environment doctor report')
+    print('-------------------------')
+
+    checks = [
+        ('numpy', 'numpy'),
+        ('svgwrite', 'svgwrite'),
+        ('tensorflow', 'tensorflow'),
+    ]
+    for name, module_name in checks:
+        spec = importlib.util.find_spec(module_name)
+        print('[{}] {}'.format('OK' if spec is not None else 'MISSING', name))
+
+    try:
+        tf_version = importlib_metadata.version('tensorflow')
+        print('[INFO] tensorflow version: {}'.format(tf_version))
+    except importlib_metadata.PackageNotFoundError:
+        print('[INFO] tensorflow version: not installed')
+
+    issue = _runtime_dependency_issue()
+    if issue:
+        print('')
+        print('Action needed:')
+        print(issue)
+        print('')
+        print('Quick fix (PowerShell):')
+        print('  python -m pip install -r requirements.txt')
+    else:
+        print('')
+        print('Environment looks ready for rendering.')
+
+def _runtime_dependency_issue():
+    required_modules = ['numpy', 'svgwrite']
+    for module_name in required_modules:
+        if importlib.util.find_spec(module_name) is None:
+            return (
+                "Missing dependency: {}.\n"
+                "Install project dependencies before rendering, for example:\n"
+                "  python -m pip install -r requirements.txt\n"
+                "Or install the missing package directly (example):\n"
+                "  pip install {}"
+            ).format(module_name, module_name)
+
+    try:
+        tf_version = importlib_metadata.version('tensorflow')
+    except importlib_metadata.PackageNotFoundError:
+        return (
+            "Missing dependency: tensorflow.\n"
+            "This project requires TensorFlow 1.x for the pretrained model.\n"
+            "Install compatible dependencies with:\n"
+            "  python -m pip install -r requirements.txt"
+        )
+
+    major = tf_version.split('.', 1)[0]
+    if major != '1':
+        return (
+            "Incompatible tensorflow version detected: {}.\n"
+            "This project expects TensorFlow 1.x (see requirements.txt uses 1.6.0).\n"
+            "Please install a TensorFlow 1.x compatible environment and rerun."
+        ).format(tf_version)
+
+
+
+    return None
+
+
+def _format_missing_dependency_error(exc):
+    module_name = getattr(exc, 'name', None)
+    if module_name and module_name.startswith('tensorflow.'):
+        return (
+            "Incompatible tensorflow runtime detected (missing internal module: {}).\n"
+            "This usually indicates a TensorFlow build/version compatibility mismatch for this legacy code path.\n"
+            "Use a clean Python 3.7 environment and install pinned dependencies from requirements.txt.\n"
+            "(PowerShell) Check numeric exit code with: echo $LASTEXITCODE"
+        ).format(module_name)
+
+    if not module_name:
+        message = str(exc)
+        if "No module named" in message:
+            module_name = message.split("No module named")[-1].strip().strip("'\"")
+    module_name = module_name or 'unknown module'
+    return (
+        "Missing dependency: {}.\n"
+        "Install project dependencies before rendering, for example:\n"
+        "  python -m pip install -r requirements.txt\n"
+        "Or install the missing package directly (example):\n"
+        "  pip install {}"
+    ).format(module_name, module_name)
+
+
+
+def _cli():
+    parser = argparse.ArgumentParser(description='Inspect or render LaTeX-style handwriting layout.')
+    parser.add_argument('expression', help='Expression like x^{2}+\\frac{1}{y}')
+    parser.add_argument('--inspect-only', action='store_true', help='Only print AST/layout information.')
+    parser.add_argument('--doctor', action='store_true', help='Print environment diagnostics for render mode.')
+    parser.add_argument('--out', default='img/math_demo.svg', help='Output SVG path for rendering mode.')
+    args = parser.parse_args()
+
+    if args.doctor:
+        print_doctor_report()
+
+    inspect_expression(args.expression)
+    if not args.inspect_only:
+        issue = _runtime_dependency_issue()
+        if issue:
+            print(issue)
+            print('Exiting with code 2.')
+            raise SystemExit(2)
+
+        try:
+            writer = MathHandWriter(seed=7)
+            writer.write_svg(args.expression, args.out)
+            print('Rendered SVG: {}'.format(args.out))
+        except ImportError as exc:
+            print(_format_missing_dependency_error(exc))
+            print('Exiting with code 2.')
+            raise SystemExit(2)
+
+
+if __name__ == '__main__':
+    _cli()
 if __name__ == '__main__':
     writer = MathHandWriter(seed=7)
     writer.write_svg('x^{2}+\\frac{1}{y}', 'img/math_demo.svg')
