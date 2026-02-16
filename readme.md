@@ -77,17 +77,3 @@ writer.write_svg(r"x^{2}+\\frac{1}{y}", "img/math_demo.svg")
 ```
 
 The resulting file contains model-generated handwriting chunks stitched into a structured 2D equation.
-
-
-### Getting visible output during testing
-If you only want to verify parsing/layout and see terminal output (no TensorFlow/model run), use:
-```bash
-python math_layout.py 'x^{2}+\\frac{1}{y_0}' --inspect-only
-```
-This prints the parsed AST and a layout summary to stdout.
-
-To render an SVG and also print progress:
-```bash
-python math_layout.py 'x^{2}+\\frac{1}{y_0}' --out img/math_demo.svg
-```
-This prints diagnostics first, then `Rendered SVG: ...` after writing the file.

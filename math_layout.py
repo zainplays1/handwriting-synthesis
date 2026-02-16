@@ -1,6 +1,10 @@
 import random
-import argparse
-import json
+
+import numpy as np
+import svgwrite
+
+import drawing
+from demo import Hand
 
 
 DEFAULT_LAYOUT = {
@@ -290,18 +294,12 @@ class ChunkSynthesizer(object):
     """Generate stroke arrays for token-sized text chunks via the untouched Hand model."""
 
     def __init__(self, hand=None, bias=0.75, style=9):
-        if hand is None:
-            from demo import Hand
-            hand = Hand()
-        self.hand = hand
+        self.hand = hand or Hand()
         self.bias = bias
         self.style = style
         self.cache = {}
 
     def generate_offsets(self, text):
-        import numpy as np
-        import drawing
-
         if text in self.cache:
             return np.copy(self.cache[text])
 
@@ -328,9 +326,6 @@ class CanvasStitcher(object):
         self.jitter_scale = jitter_scale
 
     def stitch(self, instructions, synthesizer):
-        import numpy as np
-        import drawing
-
         assembled = []
         for instruction in instructions:
             if instruction.get('type') == 'rule':
@@ -363,7 +358,6 @@ class CanvasStitcher(object):
         return np.vstack(merged)
 
     def _rule_to_coords(self, instruction):
-        import numpy as np
         return np.array([
             [instruction['x1'], instruction['y'], 0.0],
             [instruction['x2'], instruction['y'], 1.0],
@@ -394,8 +388,6 @@ class MathHandWriter(object):
         }
 
     def write_svg(self, expression, filename, stroke_color='black', stroke_width=2):
-        import svgwrite
-
         compiled = self.compile(expression)
         coords = compiled['coords']
 
@@ -426,31 +418,6 @@ class MathHandWriter(object):
         return compiled
 
 
-def inspect_expression(expression):
-    """Print parser/layout diagnostics without loading TensorFlow or running the model."""
-    ast = LatexParser(expression).parse()
-    layout = MathLayoutEngine().layout(ast)
-    print('AST:')
-    print(json.dumps(ast, indent=2, sort_keys=True))
-    print('')
-    print('Layout summary:')
-    print('  instructions: {}'.format(len(layout['instructions'])))
-    print('  bbox: {}'.format(layout['bbox']))
-
-
-def _cli():
-    parser = argparse.ArgumentParser(description='Inspect or render LaTeX-style handwriting layout.')
-    parser.add_argument('expression', help='Expression like x^{2}+\\frac{1}{y}')
-    parser.add_argument('--inspect-only', action='store_true', help='Only print AST/layout information.')
-    parser.add_argument('--out', default='img/math_demo.svg', help='Output SVG path for rendering mode.')
-    args = parser.parse_args()
-
-    inspect_expression(args.expression)
-    if not args.inspect_only:
-        writer = MathHandWriter(seed=7)
-        writer.write_svg(args.expression, args.out)
-        print('Rendered SVG: {}'.format(args.out))
-
-
 if __name__ == '__main__':
-    _cli()
+    writer = MathHandWriter(seed=7)
+    writer.write_svg('x^{2}+\\frac{1}{y}', 'img/math_demo.svg')
