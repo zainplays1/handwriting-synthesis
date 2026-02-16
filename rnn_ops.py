@@ -42,6 +42,20 @@ def _concat(prefix, suffix):
 from tensorflow.python.eager import context
 
 
+def _is_graph_mode():
+    """TensorFlow 1.x/2.x compatible graph-mode check."""
+    in_graph_mode = getattr(context, "in_graph_mode", None)
+    if callable(in_graph_mode):
+        return in_graph_mode()
+
+    executing_eagerly = getattr(context, "executing_eagerly", None)
+    if callable(executing_eagerly):
+        return not executing_eagerly()
+
+    # TF1 default behavior when eager utilities are unavailable.
+    return True
+
+
 def raw_rnn(cell, loop_fn, parallel_iterations=None, swap_memory=False, scope=None):
     """
     raw_rnn adapted from the original tensorflow implementation
@@ -66,7 +80,7 @@ def raw_rnn(cell, loop_fn, parallel_iterations=None, swap_memory=False, scope=No
     # determined by the parent scope, or is set to place the cached
     # Variable using the same placement as for the rest of the RNN.
     with vs.variable_scope(scope or "rnn") as varscope:
-        if context.in_graph_mode():
+        if _is_graph_mode():
             if varscope.caching_device is None:
                 varscope.set_caching_device(lambda op: op.device)
 
