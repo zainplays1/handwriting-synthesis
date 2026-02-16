@@ -99,6 +99,11 @@ It also checks TensorFlow compatibility up front and warns when the runtime/buil
 
 
 ### Windows quick-start (recommended)
+If rendering keeps failing, **do not use base Python 3.8+** for this repo. Use a dedicated Python 3.7 env:
+
+```powershell
+conda create -n hwsyn37 python=3.7 -y
+conda activate hwsyn37
 If rendering keeps failing, run these in your active environment:
 
 ```powershell
@@ -108,4 +113,5 @@ python math_layout.py 'x^{2}+\frac{1}{y_0}' --out img/math_demo.svg
 echo EXIT:$LASTEXITCODE
 ```
 
+`--doctor` prints Python/dependency compatibility before rendering so setup issues are obvious.
 `--doctor` prints whether `numpy`, `svgwrite`, and `tensorflow` are detectable before rendering.

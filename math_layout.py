@@ -2,6 +2,7 @@ import random
 import argparse
 import json
 import importlib
+import sys
 
 try:
     from importlib import metadata as importlib_metadata
@@ -466,6 +467,8 @@ def print_doctor_report():
     print('Environment doctor report')
     print('-------------------------')
 
+    print('[INFO] python version: {}.{}.{}'.format(*sys.version_info[:3]))
+
     checks = [
         ('numpy', 'numpy'),
         ('svgwrite', 'svgwrite'),
@@ -494,6 +497,14 @@ def print_doctor_report():
         print('Environment looks ready for rendering.')
 
 def _runtime_dependency_issue():
+    if sys.version_info[:2] >= (3, 8):
+        return (
+            "Incompatible Python version detected: {}.{}.{}\n"
+            "TensorFlow 1.x wheels used by this project are not available for Python 3.8+.\n"
+            "Create a Python 3.7 environment, then run:\n"
+            "  python -m pip install -r requirements.txt"
+        ).format(*sys.version_info[:3])
+
     required_modules = ['numpy', 'svgwrite']
     for module_name in required_modules:
         if importlib.util.find_spec(module_name) is None:
@@ -519,6 +530,7 @@ def _runtime_dependency_issue():
     if major != '1':
         return (
             "Incompatible tensorflow version detected: {}.\n"
+            "This project expects TensorFlow 1.x (requirements pin 1.15.5).\n"
             "This project expects TensorFlow 1.x (see requirements.txt uses 1.6.0).\n"
             "Please install a TensorFlow 1.x compatible environment and rerun."
         ).format(tf_version)
