@@ -104,15 +104,14 @@ If rendering keeps failing, **do not use base Python 3.8+** for this repo. Use a
 ```powershell
 conda create -n hwsyn37 python=3.7 -y
 conda activate hwsyn37
-python -m pip install -r requirements-py37.txt
+If rendering keeps failing, run these in your active environment:
+
+```powershell
+python -m pip install -r requirements.txt
 python math_layout.py 'x^{2}+\frac{1}{y_0}' --doctor --inspect-only
 python math_layout.py 'x^{2}+\frac{1}{y_0}' --out img/math_demo.svg
 echo EXIT:$LASTEXITCODE
 ```
 
 `--doctor` prints Python/dependency compatibility before rendering so setup issues are obvious.
-
-
-> TensorFlow 1.15.x is sensitive to protobuf versions. If you see a `Descriptors cannot not be created directly` error, pin protobuf to `<=3.20.3`.
-
-> If Python 3.7 reports `ModuleNotFoundError: No module named importlib_metadata`, run: `python -m pip install importlib-metadata`.
+`--doctor` prints whether `numpy`, `svgwrite`, and `tensorflow` are detectable before rendering.

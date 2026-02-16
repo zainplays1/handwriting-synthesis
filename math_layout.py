@@ -7,22 +7,13 @@ import sys
 try:
     from importlib import metadata as importlib_metadata
 except ImportError:
-    try:
-        import importlib_metadata
-    except ImportError:
-        class _ImportlibMetadataFallback(object):
-            class PackageNotFoundError(Exception):
-                pass
+    import importlib_metadata
 
-            @staticmethod
-            def version(name):
-                try:
-                    import pkg_resources
-                    return pkg_resources.get_distribution(name).version
-                except Exception:
-                    raise _ImportlibMetadataFallback.PackageNotFoundError()
+import numpy as np
+import svgwrite
 
-        importlib_metadata = _ImportlibMetadataFallback()
+import drawing
+from demo import Hand
 
 
 DEFAULT_LAYOUT = {
@@ -75,6 +66,10 @@ class LatexParser(object):
                 while j < len(expression) and expression[j].isalpha():
                     j += 1
                 command = expression[cmd_start:j]
+                j = i + 1
+                while j < len(expression) and expression[j].isalpha():
+                    j += 1
+                command = expression[i + 1:j]
                 if not command:
                     raise ValueError('Invalid LaTeX command near position {}'.format(i))
                 tokens.append(('CMD', command))
@@ -321,6 +316,7 @@ class ChunkSynthesizer(object):
             from demo import Hand
             hand = Hand()
         self.hand = hand
+        self.hand = hand or Hand()
         self.bias = bias
         self.style = style
         self.cache = {}
@@ -488,19 +484,6 @@ def print_doctor_report():
     except importlib_metadata.PackageNotFoundError:
         print('[INFO] tensorflow version: not installed')
 
-    try:
-        protobuf_version = importlib_metadata.version('protobuf')
-        print('[INFO] protobuf version: {}'.format(protobuf_version))
-    except importlib_metadata.PackageNotFoundError:
-        print('[INFO] protobuf version: not installed')
-
-    try:
-        requirements_text = open('requirements.txt', 'r').read()
-        if 'tensorflow==1.6.0' in requirements_text:
-            print('[WARN] requirements.txt still pins tensorflow==1.6.0; update to latest repo or use requirements-py37.txt.')
-    except Exception:
-        pass
-
     issue = _runtime_dependency_issue()
     if issue:
         print('')
@@ -508,7 +491,7 @@ def print_doctor_report():
         print(issue)
         print('')
         print('Quick fix (PowerShell):')
-        print('  python -m pip install -r requirements-py37.txt')
+        print('  python -m pip install -r requirements.txt')
     else:
         print('')
         print('Environment looks ready for rendering.')
@@ -519,7 +502,7 @@ def _runtime_dependency_issue():
             "Incompatible Python version detected: {}.{}.{}\n"
             "TensorFlow 1.x wheels used by this project are not available for Python 3.8+.\n"
             "Create a Python 3.7 environment, then run:\n"
-            "  python -m pip install -r requirements-py37.txt"
+            "  python -m pip install -r requirements.txt"
         ).format(*sys.version_info[:3])
 
     required_modules = ['numpy', 'svgwrite']
@@ -528,7 +511,7 @@ def _runtime_dependency_issue():
             return (
                 "Missing dependency: {}.\n"
                 "Install project dependencies before rendering, for example:\n"
-                "  python -m pip install -r requirements-py37.txt\n"
+                "  python -m pip install -r requirements.txt\n"
                 "Or install the missing package directly (example):\n"
                 "  pip install {}"
             ).format(module_name, module_name)
@@ -540,7 +523,7 @@ def _runtime_dependency_issue():
             "Missing dependency: tensorflow.\n"
             "This project requires TensorFlow 1.x for the pretrained model.\n"
             "Install compatible dependencies with:\n"
-            "  python -m pip install -r requirements-py37.txt"
+            "  python -m pip install -r requirements.txt"
         )
 
     major = tf_version.split('.', 1)[0]
@@ -548,6 +531,7 @@ def _runtime_dependency_issue():
         return (
             "Incompatible tensorflow version detected: {}.\n"
             "This project expects TensorFlow 1.x (requirements pin 1.15.5).\n"
+            "This project expects TensorFlow 1.x (see requirements.txt uses 1.6.0).\n"
             "Please install a TensorFlow 1.x compatible environment and rerun."
         ).format(tf_version)
 
@@ -574,7 +558,7 @@ def _format_missing_dependency_error(exc):
     return (
         "Missing dependency: {}.\n"
         "Install project dependencies before rendering, for example:\n"
-        "  python -m pip install -r requirements-py37.txt\n"
+        "  python -m pip install -r requirements.txt\n"
         "Or install the missing package directly (example):\n"
         "  pip install {}"
     ).format(module_name, module_name)
@@ -608,19 +592,10 @@ def _cli():
             print(_format_missing_dependency_error(exc))
             print('Exiting with code 2.')
             raise SystemExit(2)
-        except Exception as exc:
-            message = str(exc)
-            if 'Descriptors cannot not be created directly' in message:
-                print(
-                    "Incompatible protobuf runtime detected at TensorFlow import time.\n"
-                    "TensorFlow 1.15.x requires protobuf <= 3.20.x.\n"
-                    "Run:\n"
-                    "  python -m pip install 'protobuf<=3.20.3'"
-                )
-                print('Exiting with code 2.')
-                raise SystemExit(2)
-            raise
 
 
 if __name__ == '__main__':
     _cli()
+if __name__ == '__main__':
+    writer = MathHandWriter(seed=7)
+    writer.write_svg('x^{2}+\\frac{1}{y}', 'img/math_demo.svg')
